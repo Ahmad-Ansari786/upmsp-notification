@@ -2,8 +2,8 @@ name: UPMSP Auto Scraper Service
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 🎯 GitHub automatic har 30 minute me ise trigger karega
-  workflow_dispatch:       # 🛠️ Isse aap GitHub par jaakar manually click karke bhi test kar sakte hain
+    - cron: '*/30 * * * *'  # Har 30 minute me automatic chalega
+  workflow_dispatch:       # Manual button active rahega
 
 jobs:
   build_and_run:
@@ -11,21 +11,23 @@ jobs:
 
     steps:
     - name: Checkout Repository Code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set Up Python Environment
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
     - name: Install Dependencies
       run: |
-        python -om pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install -r requirements.txt
 
     - name: Inject Firebase Secret Key JSON
       run: |
-        echo '${{ secrets.FIREBASE_JSON_DATA }}' > serviceAccountKey.json
+        cat << 'EOF' > serviceAccountKey.json
+        ${{ secrets.FIREBASE_JSON_DATA }}
+        EOF
 
     - name: Execute Scraper Engine
       env:
