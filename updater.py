@@ -70,18 +70,38 @@ def get_smart_content_type(extension):
     return types_map.get(extension.lower(), 'application/octet-stream')
 
 def send_fcm_push_notification(notice_title, is_webpage_link):
+    """
+    🎯 REALTIME ALERTS TRANSMITTER: Notification ko stylish banakar bacho ke phone par bhejna
+    """
     try:
+        # Title ko bold look dene ke liye emojis aur achha casing
+        display_title = "📢 UPMSP BOARD ALERT!"
+        
+        # Body text ko stylish aur readable banana
+        if is_webpage_link:
+            display_body = f"🔗 New Portal Link Open:\n{notice_title}"
+        else:
+            display_body = f"📄 New Document Released:\n{notice_title}"
+            
+        # Agar body bohot badi hai toh end me ... lagana safety ke liye
+        if len(display_body) > 120:
+            display_body = display_body[:117] + "..."
+
         message = messaging.Message(
             data={
-                'title': "UPMSP Notification Update!",
-                'body': notice_title if len(notice_title) <= 80 else f"{notice_title[:77]}..."
+                'title': display_title,
+                'body': display_body,
+                'badge': '1',
+                'channel_id': 'upmsp_notices_channel'  # Android Oreo+ priority channel alignment
             },
             topic="all_users"
         )
+        
         response = messaging.send(message)
-        print(f"📢 PUSH NOTIFICATION SENT SUCCESSFULLY -> Token ID: {response}")
+        print(f"📢 STYLISH PUSH NOTIFICATION SENT SUCCESSFULLY -> Token ID: {response}")
     except Exception as n_err:
         print(f"⚠️ Notification Dispatch System Error: {n_err}")
+        
 
 # =====================================================================
 # 🎯 MAIN EXTRACTION ENGINE (Universal Link & Multi-File Handler)
