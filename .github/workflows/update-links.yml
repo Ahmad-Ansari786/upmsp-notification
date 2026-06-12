@@ -1,0 +1,29 @@
+name: Update Firebase Links Automatically
+
+on:
+  push:
+    branches:
+      - main  # Jab bhi aap main branch par push karenge, ye chalega
+    paths:
+      - 'update_links.py' # Sirf tab chalega jab aap is python file mein changes karenge
+
+jobs:
+  update-database:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Firebase Admin
+        run: pip install firebase-admin
+
+      - name: Run Python Script to Update Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: python update_links.py
