@@ -1,11 +1,12 @@
-name: Update Firebase Links Automatically
+name: Update Firebase Links
 
 on:
   push:
     branches:
-      - main  # Jab bhi aap main branch par push karenge, ye chalega
+      - main
     paths:
-      - 'update_links.py' # Sirf tab chalega jab aap is python file mein changes karenge
+      - 'update_links.py' # Tarika 1: Jab bhi aap update_links.py mein change karke push karenge
+  workflow_dispatch:      # Tarika 2: GitHub website par manual "Run workflow" button dikhayega
 
 jobs:
   update-database:
