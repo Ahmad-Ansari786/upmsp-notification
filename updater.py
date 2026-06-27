@@ -218,6 +218,7 @@ def run_upmsp_pipeline():
 
         print("⚡ Synchronizing Firestore Realtime Nodes...")
         try:
+            is_pdf_file = (link_extension == 'pdf')
             doc_ref.set({
                 "id": doc_id,
                 "title": cleaned_title,
@@ -227,6 +228,7 @@ def run_upmsp_pipeline():
                 "department": "UPMSP Board Office",
                 "serverFileUrl": cloudflare_permanent_url,
                 "isWebpage": is_webpage_link,
+                "isPdf": is_pdf_file,
                 "timestamp": firestore.SERVER_TIMESTAMP
             })
             print(f"✅ SUCCESS: Complete Sync Saved for [{doc_id}]")
