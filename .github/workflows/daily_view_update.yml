@@ -1,10 +1,9 @@
 name: Firestore Daily View Update
 
-# Ye sirf daily schedule par chalega aur kisi cheez se linked nahi hoga
 on:
   schedule:
-    - cron: '0 0 * * *' # Har raat 12 baje
-  workflow_dispatch: # Taaki aap manual button daba kar bhi test kar sakein
+    - cron: '0 0 * * *' # Har raat 12 baje UTC par chalega
+  workflow_dispatch: # Manual testing ke liye button
 
 jobs:
   update-views:
@@ -19,11 +18,14 @@ jobs:
           python-version: '3.9'
           
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install firebase-admin
+        run: pip install firebase-admin
         
       - name: Run Update Script
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-        run: python scripts/update_views.py
+          # Secret name wahi hai jo aapne bataya tha
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          # Service Account JSON file generate karna workflow ke runtime mein
+          echo "$FIREBASE_SERVICE_ACCOUNT_JSON" > serviceAccountKey.json
+          # Python script ko run karna
+          python scripts/update_daily_views.py
