@@ -1,0 +1,27 @@
+name: Firestore Daily View Update
+
+# Ye sirf daily schedule par chalega aur kisi cheez se linked nahi hoga
+on:
+  schedule:
+    - cron: '0 0 * * *' # Har raat 12 baje
+  workflow_dispatch: # Taaki aap manual button daba kar bhi test kar sakein
+
+jobs:
+  update-views:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Install dependencies
+        run: pip install firebase-admin
+        
+      - name: Run Update Script
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: python scripts/update_views.py
