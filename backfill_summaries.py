@@ -8,7 +8,6 @@ import google.generativeai as genai
 # =====================================================================
 # ⚙️ CONFIGURATION
 # =====================================================================
-# Apna Gemini API Key yahan set karein 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YAHAN_APNI_API_KEY_DAALEIN_AGAR_ENV_NAHI_HAI")
 FIREBASE_SERVICE_ACCOUNT_JSON = "serviceAccountKey.json"
 
@@ -18,7 +17,6 @@ if not GEMINI_API_KEY or GEMINI_API_KEY == "YAHAN_APNI_API_KEY_DAALEIN_AGAR_ENV_
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Firebase Initialize
 if not os.path.exists(FIREBASE_SERVICE_ACCOUNT_JSON):
     print(f"❌ Error: '{FIREBASE_SERVICE_ACCOUNT_JSON}' file nahi mili!")
     exit(1)
@@ -44,14 +42,15 @@ def get_smart_content_type(extension):
 
 def generate_ai_summary(bytes_payload, mime_type, title):
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        # 🌟 BADLAAV: 15 RPM wali speed ke liye 'gemini-1.5-flash' ka use
+        model = genai.GenerativeModel('gemini-3.1-flash-lite')
         prompt = (
             f"Notice Title: '{title}'\n"
             "Task: Please read the entire attached document thoroughly from start to finish. "
             "Carefully analyze all the pages, extract key information such as important dates, deadlines, "
             "rules, and the main purpose of the notice. "
             "After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
-            "2-3 line summary in Hindi or English."
+            "5-6 line (bullet point) summary in Hindi(script also).If more important then more lines also."
         )
         
         if mime_type in ['application/pdf', 'image/jpeg', 'image/png']:
@@ -70,10 +69,8 @@ def generate_ai_summary(bytes_payload, mime_type, title):
 # 🚀 MAIN BACKFILL PROCESS
 # =====================================================================
 def run_backfill():
-    # 🌟 BADLAAV YAHAN HAI: Sirf wahi fetch karo jinka department UPMSP Board Office hai
     print("\n🔍 Fetching 'UPMSP Board Office' documents from Firestore...")
     
-    # Firestore Query Filter
     docs = collection_ref.where("department", "==", "UPMSP Board Office").stream()
     
     updated_count = 0
@@ -86,7 +83,6 @@ def run_backfill():
         is_webpage = doc_data.get("isWebpage", False)
         file_url = doc_data.get("serverFileUrl", "")
         
-        # 1. Check karo agar summary pehle se hai toh skip kar do
         if "summary" in doc_data:
             skipped_count += 1
             continue
@@ -94,7 +90,6 @@ def run_backfill():
         print("-" * 50)
         print(f"📄 Processing: {title[:50]}...")
         
-        # 2. Webpage Handle Karo
         if is_webpage:
             print("🌐 Webpage detected, setting default summary...")
             collection_ref.document(doc_id).update({
@@ -103,7 +98,6 @@ def run_backfill():
             updated_count += 1
             continue
             
-        # 3. File Download Karo
         if not file_url:
             print("⚠️ Koi file URL nahi mila, skipping...")
             continue
@@ -119,7 +113,7 @@ def run_backfill():
             ext = file_url.split('.')[-1].lower() if '.' in file_url else 'pdf'
             mime_type = get_smart_content_type(ext)
             
-            print("🧠 Generating AI Summary (This will take a few seconds)...")
+            print("🧠 Generating AI Summary...")
             ai_summary = generate_ai_summary(bytes_payload, mime_type, title)
             
             if ai_summary:
@@ -129,9 +123,9 @@ def run_backfill():
                 })
                 updated_count += 1
                 
-                # 🛑 RATE LIMIT PROTECTION
-                print("⏳ Sleeping for 35 seconds to respect Gemini Free Tier limits...")
-                time.sleep(35)
+                # 🌟 BADLAAV: Delay ko ghatakar sirf 5 seconds kar diya gaya hai (15 RPM ke hisaab se safe limit)
+                print("⏳ Sleeping for 5 seconds...")
+                time.sleep(5)
             else:
                 print("❌ Failed to generate summary for this document.")
                 
