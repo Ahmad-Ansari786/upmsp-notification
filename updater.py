@@ -61,7 +61,7 @@ def generate_ai_summary(bytes_payload, mime_type, title):
         
     try:
         model = genai.GenerativeModel('gemini-2.5-flash-lite')
-        prompt = f"Please provide a short, concise, and easy to understand 2-3 line summary of this UPMSP notice titled: '{title}'."
+        prompt = f"Please provide a short, concise, and easy to understand 2-3 line(in bullet points) summary in hindi(script also) of this UPMSP notice titled: '{title}'."
         
         # Supported formats for inline data in Gemini
         if mime_type in ['application/pdf', 'image/jpeg', 'image/png']:
