@@ -67,7 +67,7 @@ def generate_ai_summary(bytes_payload, mime_type, title):
             "Carefully analyze all the pages, extract key information such as important dates, deadlines, "
             "rules, and the main purpose of the notice. "
             "After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
-            "5-6 line summary in Hindi(script also)."
+            "4-5 line (bullet point) summary in Hindi(script also).If more important then more lines also."
         )
         # Supported formats for inline data in Gemini
         if mime_type in ['application/pdf', 'image/jpeg', 'image/png']:
