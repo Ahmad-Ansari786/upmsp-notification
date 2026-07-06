@@ -36,4 +36,5 @@ jobs:
         CF_ENDPOINT: ${{ secrets.CF_ENDPOINT }}
         CF_PUBLIC_URL: ${{ secrets.CF_PUBLIC_URL }}
         CF_BUCKET_NAME: ${{ secrets.CF_BUCKET_NAME }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # 🌟 ADDED: Gemini API Key secret se pass ho rahi hai
       run: python updater.py
