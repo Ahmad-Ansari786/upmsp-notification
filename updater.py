@@ -9,6 +9,7 @@ from botocore.exceptions import NoCredentialsError
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
 from datetime import datetime
+import google.generativeai as genai  # 🌟 ADDED: Google AI SDK
 
 # =====================================================================
 # ⚙️ FULL CONFIGURATION BLOCK (GitHub Secrets Encryption Layer)
@@ -18,6 +19,11 @@ CLOUDFLARE_SECRET_KEY = os.environ.get("CF_SECRET_KEY")
 CLOUDFLARE_ENDPOINT = os.environ.get("CF_ENDPOINT")
 CLOUDFLARE_PUBLIC_BASE_URL = os.environ.get("CF_PUBLIC_URL")
 CLOUDFLARE_BUCKET_NAME = os.environ.get("CF_BUCKET_NAME")
+
+# 🌟 ADDED: Gemini API Key Setup
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 FIREBASE_SERVICE_ACCOUNT_JSON = "serviceAccountKey.json"
 
@@ -42,6 +48,33 @@ r2_client = boto3.client(
     aws_secret_access_key=CLOUDFLARE_SECRET_KEY,
     region_name='auto'
 )
+
+# =====================================================================
+# 🤖 GOOGLE AI (GEMINI) SUMMARY GENERATOR
+# =====================================================================
+def generate_ai_summary(bytes_payload, mime_type, title):
+    """
+    🎯 IN-MEMORY SUMMARY: Bina Cloudflare Class B use kiye summary nikalna.
+    """
+    if not GEMINI_API_KEY:
+        return "AI Summary unavailable (No API Key)"
+        
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"Please provide a short, concise, and easy to understand 2-3 line summary of this UPMSP notice titled: '{title}'."
+        
+        # Supported formats for inline data in Gemini
+        if mime_type in ['application/pdf', 'image/jpeg', 'image/png']:
+            response = model.generate_content([
+                prompt,
+                {"mime_type": mime_type, "data": bytes_payload}
+            ])
+            return response.text.strip()
+        else:
+            return "Document format not supported for direct AI summary."
+    except Exception as e:
+        print(f"⚠️ Google AI Summary Error: {e}")
+        return "Summary generation failed."
 
 # =====================================================================
 # 🛠️ HELPER PARSING FUNCTIONS (Data Security & Formatting)
@@ -74,16 +107,13 @@ def send_fcm_push_notification(notice_title, is_webpage_link):
     🎯 REALTIME ALERTS TRANSMITTER: Notification ko stylish banakar bacho ke phone par bhejna
     """
     try:
-        # Title ko bold look dene ke liye emojis aur achha casing
         display_title = "📢 UPMSP BOARD ALERT!"
         
-        # Body text ko stylish aur readable banana
         if is_webpage_link:
             display_body = f"🔗 New Portal Link Open:\n{notice_title}"
         else:
             display_body = f"📄 New Document Released:\n{notice_title}"
             
-        # Agar body bohot badi hai toh end me ... lagana safety ke liye
         if len(display_body) > 120:
             display_body = display_body[:117] + "..."
 
@@ -92,7 +122,7 @@ def send_fcm_push_notification(notice_title, is_webpage_link):
                 'title': display_title,
                 'body': display_body,
                 'badge': '1',
-                'channel_id': 'upmsp_notices_channel'  # Android Oreo+ priority channel alignment
+                'channel_id': 'upmsp_notices_channel'  
             },
             topic="all_users"
         )
@@ -185,6 +215,7 @@ def run_upmsp_pipeline():
         print(f"🔗 Target Link Type: {'WEBPORTAL' if is_webpage_link else f'FILE ({link_extension.upper()})'}")
         
         cloudflare_permanent_url = target_url
+        ai_summary_text = "Portal link notice - please visit the portal for full details."
 
         if not is_webpage_link:
             print(f"📥 Streaming file bytes from UPMSP for [{file_name}]...")
@@ -197,7 +228,12 @@ def run_upmsp_pipeline():
                 bytes_payload = file_response.content
                 content_type_header = get_smart_content_type(link_extension)
 
+                # 🌟 ADDED: Generate AI Summary in-memory before Cloudflare Upload
+                print("🧠 Generating Google AI Summary...")
+                ai_summary_text = generate_ai_summary(bytes_payload, content_type_header, cleaned_title)
+
                 print(f"☁️ Pushing binary data to Cloudflare R2 [Mime: {content_type_header}]...")
+                # 👉 NOTE: Yeh ek Class A operation (PUT) hai, no extra Class B operation needed for AI!
                 r2_client.put_object(
                     Bucket=CLOUDFLARE_BUCKET_NAME,
                     Key=f"notices/{file_name}",
@@ -214,11 +250,12 @@ def run_upmsp_pipeline():
                 print(f"❌ R2 Upload execution error: {e}")
                 continue
         else:
-            print("🌐 [Webportal Detected] Cloudflare upload skipped. Directing link to Firestore...")
+            print("🌐 [Webportal Detected] Cloudflare upload & AI Summary skipped. Directing link to Firestore...")
 
         print("⚡ Synchronizing Firestore Realtime Nodes...")
         try:
             is_pdf_file = (link_extension == 'pdf')
+            # 🌟 ADDED: 'summary' field below
             doc_ref.set({
                 "id": doc_id,
                 "title": cleaned_title,
@@ -227,6 +264,7 @@ def run_upmsp_pipeline():
                 "fileName": file_name,
                 "department": "UPMSP Board Office",
                 "serverFileUrl": cloudflare_permanent_url,
+                "summary": ai_summary_text, 
                 "isWebpage": is_webpage_link,
                 "isPdf": is_pdf_file,
                 "timestamp": firestore.SERVER_TIMESTAMP
