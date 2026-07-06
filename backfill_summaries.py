@@ -44,7 +44,7 @@ def get_smart_content_type(extension):
 
 def generate_ai_summary(bytes_payload, mime_type, title):
     try:
-        model = genai.GenerativeModel('gemini-1.5-pro')
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
         prompt = (
             f"Notice Title: '{title}'\n"
             "Task: Please read the entire attached document thoroughly from start to finish. "
