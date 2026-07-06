@@ -2,3 +2,4 @@ requests
 beautifulsoup4
 firebase-admin
 boto3
+google-generativeai
