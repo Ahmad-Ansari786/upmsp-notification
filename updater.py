@@ -9,7 +9,7 @@ from botocore.exceptions import NoCredentialsError
 import firebase_admin
 from firebase_admin import credentials, firestore, messaging
 from datetime import datetime
-import google.generativeai as genai  # 🌟 ADDED: Google AI SDK
+import google.generativeai as genai
 
 # =====================================================================
 # ⚙️ FULL CONFIGURATION BLOCK (GitHub Secrets Encryption Layer)
@@ -20,7 +20,7 @@ CLOUDFLARE_ENDPOINT = os.environ.get("CF_ENDPOINT")
 CLOUDFLARE_PUBLIC_BASE_URL = os.environ.get("CF_PUBLIC_URL")
 CLOUDFLARE_BUCKET_NAME = os.environ.get("CF_BUCKET_NAME")
 
-# 🌟 ADDED: Gemini API Key Setup
+# 🌟 Gemini API Key Setup
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -53,9 +53,6 @@ r2_client = boto3.client(
 # 🤖 GOOGLE AI (GEMINI) SUMMARY GENERATOR
 # =====================================================================
 def generate_ai_summary(bytes_payload, mime_type, title):
-    """
-    🎯 IN-MEMORY SUMMARY: Bina Cloudflare Class B use kiye summary nikalna.
-    """
     if not GEMINI_API_KEY:
         return "AI Summary unavailable (No API Key)"
         
@@ -69,7 +66,6 @@ def generate_ai_summary(bytes_payload, mime_type, title):
             "After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
             "4-5 line (bullet point) summary in Hindi(script also).If more important then more lines also."
         )
-        # Supported formats for inline data in Gemini
         if mime_type in ['application/pdf', 'image/jpeg', 'image/png']:
             response = model.generate_content([
                 prompt,
@@ -109,9 +105,6 @@ def get_smart_content_type(extension):
     return types_map.get(extension.lower(), 'application/octet-stream')
 
 def send_fcm_push_notification(notice_title, is_webpage_link):
-    """
-    🎯 REALTIME ALERTS TRANSMITTER: Notification ko stylish banakar bacho ke phone par bhejna
-    """
     try:
         display_title = "📢 UPMSP BOARD ALERT!"
         
@@ -137,7 +130,6 @@ def send_fcm_push_notification(notice_title, is_webpage_link):
         print(f"📢 STYLISH PUSH NOTIFICATION SENT SUCCESSFULLY -> Token ID: {response}")
     except Exception as n_err:
         print(f"⚠️ Notification Dispatch System Error: {n_err}")
-        
 
 # =====================================================================
 # 🎯 MAIN EXTRACTION ENGINE (Universal Link & Multi-File Handler)
@@ -172,41 +164,61 @@ def run_upmsp_pipeline():
             continue  
             
         raw_title = cells[1].get_text(separator=" ").strip()
-        # Clean title: Removes extra spaces and the "new" text logo
         cleaned_title = re.sub(r'\s+', ' ', raw_title).replace("Download", "").replace("new", "").strip()
         
         original_website_date = cells[2].get_text().strip()
         if not original_website_date:
             original_website_date = datetime.now().strftime("%d-%m-%Y")
 
-        # 🌟 SMART LINK EXTRACTOR: Handling both Download Column and Description Links
+        # 🌟 SMART LINK EXTRACTOR
         links_to_process = []
 
         download_anchor = cells[3].find('a', href=True)
         if download_anchor:
-            # Agar normal download column me link hai
+            # Normal Download Column Link
             links_to_process.append({
                 "title": cleaned_title,
-                "url": download_anchor['href'].strip()
+                "url": download_anchor['href'].strip(),
+                "is_sublink": False
             })
         else:
-            # Agar download column khali hai, toh description column me links dhoondho
+            # Special Multi-Link Notices in Description
             description_anchors = cells[1].find_all('a', href=True)
             if description_anchors:
+                cell_html = str(cells[1])
                 for anchor in description_anchors:
                     sub_link_text = anchor.get_text().strip()
-                    specific_title = f"{cleaned_title.split('।')[0].strip()} - {sub_link_text}"
+                    href = anchor['href'].strip()
+
+                    anchor_html = str(anchor)
+                    anchor_index = cell_html.find(anchor_html)
+                    text_before_link = cell_html[:anchor_index] if anchor_index != -1 else ""
+
+                    category = ""
+                    hs_idx = max(text_before_link.rfind("हाईस्कूल"), text_before_link.rfind("High School"))
+                    inter_idx = max(text_before_link.rfind("इंटरमीडिएट"), text_before_link.rfind("Intermediate"))
+
+                    if hs_idx > inter_idx:
+                        category = "[हाईस्कूल] "
+                    elif inter_idx > hs_idx:
+                        category = "[इंटरमीडिएट] "
+
+                    main_title_cleaned = cleaned_title.split('।')[0].strip()
+                    specific_title = f"{main_title_cleaned} - {category}{sub_link_text}"
+
                     links_to_process.append({
                         "title": specific_title,
-                        "url": anchor['href'].strip()
+                        "url": href,
+                        "is_sublink": True
                     })
             else:
-                continue # Koi link nahi mila, is row ko skip karo
+                continue 
 
-        # Ab un saare links ko ek-ek karke process karenge
+        # Process Extracted Links
         for link_data in links_to_process:
             href_link = link_data["url"]
             final_title = link_data["title"]
+            is_sublink = link_data.get("is_sublink", False)
 
             link_parts = href_link.split('?')[0].split('/')[-1].split('.')
             link_extension = link_parts[-1].lower() if len(link_parts) > 1 else ""
@@ -222,8 +234,13 @@ def run_upmsp_pipeline():
 
             file_name = target_url.split('/')[-1] if not is_webpage_link else "portal_link.pdf"
             
+            # Unique ID Generation logic updated for multi-links
             if is_webpage_link:
-                doc_id = clean_document_id(hashlib.md5(target_url.encode()).hexdigest()[:12])
+                if is_sublink:
+                    unique_str = f"{target_url}_{final_title}"
+                    doc_id = clean_document_id(hashlib.md5(unique_str.encode()).hexdigest()[:12])
+                else:
+                    doc_id = clean_document_id(hashlib.md5(target_url.encode()).hexdigest()[:12])
             else:
                 doc_id = clean_document_id(file_name)
 
