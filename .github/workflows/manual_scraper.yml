@@ -1,0 +1,58 @@
+name: UPMSP Manual Uploader Service
+
+on:
+  push:
+    paths:
+      - 'inputs/**'        # Jab bhi inputs folder me koi file add hogi, ye chalega
+  workflow_dispatch:       # Manual button
+
+jobs:
+  build_and_upload:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # 🌟 ADDED: Delete karke wapas save (commit) karne ki permission
+
+    steps:
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }} # Taki bot code me changes push kar sake
+
+    - name: Set Up Python Environment
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Inject Firebase Secret Key JSON
+      run: |
+        cat << 'EOF' > serviceAccountKey.json
+        ${{ secrets.FIREBASE_JSON_DATA }}
+        EOF
+
+    - name: Execute Manual Uploader Engine
+      env:
+        CF_ACCESS_KEY: ${{ secrets.CF_ACCESS_KEY }}
+        CF_SECRET_KEY: ${{ secrets.CF_SECRET_KEY }}
+        CF_ENDPOINT: ${{ secrets.CF_ENDPOINT }}
+        CF_PUBLIC_URL: ${{ secrets.CF_PUBLIC_URL }}
+        CF_BUCKET_NAME: ${{ secrets.CF_BUCKET_NAME }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: python manual_updater.py
+
+    - name: Delete Processed PDFs and Commit Changes
+      run: |
+        # 🌟 ADDED: GitHub Actions bot ko setup karna
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # inputs folder se saari PDFs ko force delete karna
+        git rm -f inputs/*.pdf || true
+        
+        # Changes ko save (commit) karke repo me push karna
+        git commit -m "🧹 Auto-cleaned processed manual PDFs [skip ci]" || true
+        git push
