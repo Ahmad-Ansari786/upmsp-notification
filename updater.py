@@ -58,7 +58,7 @@ def generate_ai_summary(bytes_payload, mime_type, title):
         return "AI Summary unavailable (No API Key)"
         
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+        model = genai.GenerativeModel('gemini-3.1-flash-lite')
         prompt = (
             f"Notice Title: '{title}'\n"
             "Task: Please read the entire attached document thoroughly from start to finish. "
