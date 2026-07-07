@@ -171,115 +171,136 @@ def run_upmsp_pipeline():
         if len(cells) < 4:
             continue  
             
-        raw_title = cells[1].get_text().strip()
-        cleaned_title = re.sub(r'\s+', ' ', raw_title).replace("Download", "").strip()
+        raw_title = cells[1].get_text(separator=" ").strip()
+        # Clean title: Removes extra spaces and the "new" text logo
+        cleaned_title = re.sub(r'\s+', ' ', raw_title).replace("Download", "").replace("new", "").strip()
         
         original_website_date = cells[2].get_text().strip()
         if not original_website_date:
             original_website_date = datetime.now().strftime("%d-%m-%Y")
 
+        # 🌟 SMART LINK EXTRACTOR: Handling both Download Column and Description Links
+        links_to_process = []
+
         download_anchor = cells[3].find('a', href=True)
-        if not download_anchor:
-            continue  
-            
-        href_link = download_anchor['href'].strip()
-
-        link_parts = href_link.split('?')[0].split('/')[-1].split('.')
-        link_extension = link_parts[-1].lower() if len(link_parts) > 1 else ""
-
-        known_file_extensions = ['pdf', 'jpeg', 'jpg', 'png', 'gif', 'docx', 'doc', 'xlsx', 'xls', 'zip', 'rar']
-        is_webpage_link = ".aspx" in href_link.lower() or link_extension not in known_file_extensions
-
-        if href_link.startswith('http://') or href_link.startswith('https://'):
-            target_url = href_link
-        else:
-            clean_path = href_link.lstrip('./')
-            target_url = "https://upmsp.edu.in/" + clean_path
-
-        file_name = target_url.split('/')[-1] if not is_webpage_link else "portal_link.pdf"
-        
-        if is_webpage_link:
-            doc_id = clean_document_id(hashlib.md5(target_url.encode()).hexdigest()[:12])
-        else:
-            doc_id = clean_document_id(file_name)
-
-        try:
-            doc_ref = firestore_collection.document(doc_id)
-            doc_snapshot = doc_ref.get()
-            if doc_snapshot.exists:
-                skip_count += 1
-                continue
-        except Exception as err:
-            print(f"⚠️ Registry read error for [{doc_id}]: {err}")
-            continue
-
-        live_entry_date = datetime.now().strftime("%d-%m-%Y")
-
-        print("-" * 50)
-        print(f"📋 New Entry Match: {cleaned_title[:50]}...")
-        print(f"📅 Website Date: {original_website_date} | ⚡ Entry Date: {live_entry_date}")
-        print(f"🔗 Target Link Type: {'WEBPORTAL' if is_webpage_link else f'FILE ({link_extension.upper()})'}")
-        
-        cloudflare_permanent_url = target_url
-        ai_summary_text = "Portal link notice - please visit the portal for full details."
-
-        if not is_webpage_link:
-            print(f"📥 Streaming file bytes from UPMSP for [{file_name}]...")
-            try:
-                file_response = requests.get(target_url, headers=headers, timeout=15)
-                if file_response.status_code != 200:
-                    print(f"⚠️ File Stream failed ({file_response.status_code}). Skipping...")
-                    continue
-                    
-                bytes_payload = file_response.content
-                content_type_header = get_smart_content_type(link_extension)
-
-                # 🌟 ADDED: Generate AI Summary in-memory before Cloudflare Upload
-                print("🧠 Generating Google AI Summary...")
-                ai_summary_text = generate_ai_summary(bytes_payload, content_type_header, cleaned_title)
-
-                print(f"☁️ Pushing binary data to Cloudflare R2 [Mime: {content_type_header}]...")
-                # 👉 NOTE: Yeh ek Class A operation (PUT) hai, no extra Class B operation needed for AI!
-                r2_client.put_object(
-                    Bucket=CLOUDFLARE_BUCKET_NAME,
-                    Key=f"notices/{file_name}",
-                    Body=bytes_payload,
-                    ContentType=content_type_header
-                )
-                cloudflare_permanent_url = f"{CLOUDFLARE_PUBLIC_BASE_URL.rstrip('/')}/notices/{file_name}"
-                print(f"✅ R2 Permanent Backup URL: {cloudflare_permanent_url}")
-
-            except NoCredentialsError:
-                print("❌ Invalid Cloudflare API Credentials! Stopping pipeline execution.")
-                return
-            except Exception as e:
-                print(f"❌ R2 Upload execution error: {e}")
-                continue
-        else:
-            print("🌐 [Webportal Detected] Cloudflare upload & AI Summary skipped. Directing link to Firestore...")
-
-        print("⚡ Synchronizing Firestore Realtime Nodes...")
-        try:
-            is_pdf_file = (link_extension == 'pdf')
-            # 🌟 ADDED: 'summary' field below
-            doc_ref.set({
-                "id": doc_id,
+        if download_anchor:
+            # Agar normal download column me link hai
+            links_to_process.append({
                 "title": cleaned_title,
-                "date": live_entry_date,  
-                "originalWebsiteDate": original_website_date,  
-                "fileName": file_name,
-                "department": "UPMSP Board Office",
-                "serverFileUrl": cloudflare_permanent_url,
-                "summary": ai_summary_text, 
-                "isWebpage": is_webpage_link,
-                "isPdf": is_pdf_file,
-                "timestamp": firestore.SERVER_TIMESTAMP
+                "url": download_anchor['href'].strip()
             })
-            print(f"✅ SUCCESS: Complete Sync Saved for [{doc_id}]")
-            send_fcm_push_notification(cleaned_title, is_webpage_link)
-            success_count += 1
-        except Exception as e:
-            print(f"❌ Database Transaction Crash: {e}")
+        else:
+            # Agar download column khali hai, toh description column me links dhoondho
+            description_anchors = cells[1].find_all('a', href=True)
+            if description_anchors:
+                for anchor in description_anchors:
+                    sub_link_text = anchor.get_text().strip()
+                    specific_title = f"{cleaned_title.split('।')[0].strip()} - {sub_link_text}"
+                    links_to_process.append({
+                        "title": specific_title,
+                        "url": anchor['href'].strip()
+                    })
+            else:
+                continue # Koi link nahi mila, is row ko skip karo
+
+        # Ab un saare links ko ek-ek karke process karenge
+        for link_data in links_to_process:
+            href_link = link_data["url"]
+            final_title = link_data["title"]
+
+            link_parts = href_link.split('?')[0].split('/')[-1].split('.')
+            link_extension = link_parts[-1].lower() if len(link_parts) > 1 else ""
+
+            known_file_extensions = ['pdf', 'jpeg', 'jpg', 'png', 'gif', 'docx', 'doc', 'xlsx', 'xls', 'zip', 'rar']
+            is_webpage_link = ".aspx" in href_link.lower() or link_extension not in known_file_extensions
+
+            if href_link.startswith('http://') or href_link.startswith('https://'):
+                target_url = href_link
+            else:
+                clean_path = href_link.lstrip('./')
+                target_url = "https://upmsp.edu.in/" + clean_path
+
+            file_name = target_url.split('/')[-1] if not is_webpage_link else "portal_link.pdf"
+            
+            if is_webpage_link:
+                doc_id = clean_document_id(hashlib.md5(target_url.encode()).hexdigest()[:12])
+            else:
+                doc_id = clean_document_id(file_name)
+
+            try:
+                doc_ref = firestore_collection.document(doc_id)
+                doc_snapshot = doc_ref.get()
+                if doc_snapshot.exists:
+                    skip_count += 1
+                    continue
+            except Exception as err:
+                print(f"⚠️ Registry read error for [{doc_id}]: {err}")
+                continue
+
+            live_entry_date = datetime.now().strftime("%d-%m-%Y")
+
+            print("-" * 50)
+            print(f"📋 New Entry Match: {final_title[:50]}...")
+            print(f"📅 Website Date: {original_website_date} | ⚡ Entry Date: {live_entry_date}")
+            print(f"🔗 Target Link Type: {'WEBPORTAL' if is_webpage_link else f'FILE ({link_extension.upper()})'}")
+            
+            cloudflare_permanent_url = target_url
+            ai_summary_text = "Portal link notice - please visit the portal for full details."
+
+            if not is_webpage_link:
+                print(f"📥 Streaming file bytes from UPMSP for [{file_name}]...")
+                try:
+                    file_response = requests.get(target_url, headers=headers, timeout=15)
+                    if file_response.status_code != 200:
+                        print(f"⚠️ File Stream failed ({file_response.status_code}). Skipping...")
+                        continue
+                        
+                    bytes_payload = file_response.content
+                    content_type_header = get_smart_content_type(link_extension)
+
+                    print("🧠 Generating Google AI Summary...")
+                    ai_summary_text = generate_ai_summary(bytes_payload, content_type_header, final_title)
+
+                    print(f"☁️ Pushing binary data to Cloudflare R2 [Mime: {content_type_header}]...")
+                    r2_client.put_object(
+                        Bucket=CLOUDFLARE_BUCKET_NAME,
+                        Key=f"notices/{file_name}",
+                        Body=bytes_payload,
+                        ContentType=content_type_header
+                    )
+                    cloudflare_permanent_url = f"{CLOUDFLARE_PUBLIC_BASE_URL.rstrip('/')}/notices/{file_name}"
+                    print(f"✅ R2 Permanent Backup URL: {cloudflare_permanent_url}")
+
+                except NoCredentialsError:
+                    print("❌ Invalid Cloudflare API Credentials! Stopping pipeline execution.")
+                    return
+                except Exception as e:
+                    print(f"❌ R2 Upload execution error: {e}")
+                    continue
+            else:
+                print("🌐 [Webportal Detected] Cloudflare upload & AI Summary skipped. Directing link to Firestore...")
+
+            print("⚡ Synchronizing Firestore Realtime Nodes...")
+            try:
+                is_pdf_file = (link_extension == 'pdf')
+                doc_ref.set({
+                    "id": doc_id,
+                    "title": final_title,
+                    "date": live_entry_date,  
+                    "originalWebsiteDate": original_website_date,  
+                    "fileName": file_name,
+                    "department": "UPMSP Board Office",
+                    "serverFileUrl": cloudflare_permanent_url,
+                    "summary": ai_summary_text, 
+                    "isWebpage": is_webpage_link,
+                    "isPdf": is_pdf_file,
+                    "timestamp": firestore.SERVER_TIMESTAMP
+                })
+                print(f"✅ SUCCESS: Complete Sync Saved for [{doc_id}]")
+                send_fcm_push_notification(final_title, is_webpage_link)
+                success_count += 1
+            except Exception as e:
+                print(f"❌ Database Transaction Crash: {e}")
 
     print("\n" + "=" * 50)
     print(f"🏁 CYCLE COMPLETE | New Pushed: {success_count} | Duplicates Bypassed: {skip_count}")
