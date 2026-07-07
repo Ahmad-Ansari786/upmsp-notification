@@ -14,14 +14,15 @@ import google.generativeai as genai
 # =====================================================================
 # ⚙️ FULL CONFIGURATION BLOCK (GitHub Secrets Encryption Layer)
 # =====================================================================
-CLOUDFLARE_ACCESS_KEY = os.environ.get("CF_ACCESS_KEY")
-CLOUDFLARE_SECRET_KEY = os.environ.get("CF_SECRET_KEY")
-CLOUDFLARE_ENDPOINT = os.environ.get("CF_ENDPOINT")
-CLOUDFLARE_PUBLIC_BASE_URL = os.environ.get("CF_PUBLIC_URL")
-CLOUDFLARE_BUCKET_NAME = os.environ.get("CF_BUCKET_NAME")
+# ADDED .strip() to clean any accidental newlines or spaces from GitHub Secrets
+CLOUDFLARE_ACCESS_KEY = os.environ.get("CF_ACCESS_KEY", "").strip()
+CLOUDFLARE_SECRET_KEY = os.environ.get("CF_SECRET_KEY", "").strip()
+CLOUDFLARE_ENDPOINT = os.environ.get("CF_ENDPOINT", "").strip()
+CLOUDFLARE_PUBLIC_BASE_URL = os.environ.get("CF_PUBLIC_URL", "").strip()
+CLOUDFLARE_BUCKET_NAME = os.environ.get("CF_BUCKET_NAME", "").strip()
 
 # 🌟 Gemini API Key Setup
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
