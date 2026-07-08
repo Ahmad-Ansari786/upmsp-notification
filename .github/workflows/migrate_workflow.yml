@@ -1,7 +1,7 @@
 name: R2 Migration Service
 
 on:
-  workflow_dispatch: # Yeh schedule par nahi, balki sirf aapke button dabane par chalega
+  workflow_dispatch: # Yeh manual trigger hai, isse aapke main scraper ka schedule disturb nahi hoga
 
 jobs:
   migrate_data:
@@ -11,7 +11,7 @@ jobs:
     - name: Checkout Repository Code
       uses: actions/checkout@v4
 
-    - name: Set Up Python
+    - name: Set Up Python Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
@@ -29,15 +29,17 @@ jobs:
 
     - name: Run Migration Script
       env:
-        # Purane Cloudflare ke variables (Scraper wale secrets reuse kar rahe hain)
-        SOURCE_ACCESS_KEY: ${{ secrets.CF_ACCESS_KEY }}
-        SOURCE_SECRET_KEY: ${{ secrets.CF_SECRET_KEY }}
-        SOURCE_ENDPOINT: ${{ secrets.CF_ENDPOINT }}
-        SOURCE_BUCKET: ${{ secrets.CF_BUCKET_NAME }}
+        # Purane (Source) Cloudflare variables (Aapke existing scraper wale secrets)
+        CF_ACCESS_KEY: ${{ secrets.CF_ACCESS_KEY }}
+        CF_SECRET_KEY: ${{ secrets.CF_SECRET_KEY }}
+        CF_ENDPOINT: ${{ secrets.CF_ENDPOINT }}
+        CF_BUCKET_NAME: ${{ secrets.CF_BUCKET_NAME }}
+        CF_PUBLIC_URL: ${{ secrets.CF_PUBLIC_URL }}
         
-        # Naye Cloudflare ke variables
-        DEST_ACCOUNT_ID: ${{ secrets.DEST_CF_ACCOUNT_ID }}
-        DEST_ACCESS_KEY: ${{ secrets.DEST_CF_ACCESS_KEY }}
-        DEST_SECRET_KEY: ${{ secrets.DEST_CF_SECRET_KEY }}
-        DEST_BUCKET: ${{ secrets.DEST_CF_BUCKET_NAME }}
+        # Naye (Destination) Cloudflare variables (Naye secrets jo aap add karenge)
+        DEST_CF_ACCOUNT_ID: ${{ secrets.DEST_CF_ACCOUNT_ID }}
+        DEST_CF_ACCESS_KEY: ${{ secrets.DEST_CF_ACCESS_KEY }}
+        DEST_CF_SECRET_KEY: ${{ secrets.DEST_CF_SECRET_KEY }}
+        DEST_CF_BUCKET_NAME: ${{ secrets.DEST_CF_BUCKET_NAME }}
+        DEST_CF_PUBLIC_URL: ${{ secrets.DEST_CF_PUBLIC_URL }}
       run: python migrate_r2.py
