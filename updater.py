@@ -197,12 +197,12 @@ def run_upmsp_pipeline():
 
                     category = ""
                     hs_idx = max(text_before_link.rfind("हाईस्कूल"), text_before_link.rfind("High School"))
-                    inter_idx = max(text_before_link.rfind("इंटरमीडिएट"), text_before_link.rfind("Intermediate"))
+                    inter_idx = max(text_before_link.rfind("इण्टरमीडिएट"), text_before_link.rfind("Intermediate"))
 
                     if hs_idx > inter_idx:
                         category = "[हाईस्कूल] "
                     elif inter_idx > hs_idx:
-                        category = "[इंटरमीडिएट] "
+                        category = "[इण्टरमीडिएट] "
 
                     main_title_cleaned = cleaned_title.split('।')[0].strip()
                     specific_title = f"{main_title_cleaned} - {category}{sub_link_text}"
