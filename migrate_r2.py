@@ -155,6 +155,6 @@ def update_firestore_urls():
 # 🚦 MAIN EXECUTION
 # =====================================================================
 if __name__ == "__main__":
-    transfer_files()
+    # transfer_files()
     update_firestore_urls()
     print("\n🚀 ALL MIGRATION TASKS COMPLETED SUCCESSFULLY!")
