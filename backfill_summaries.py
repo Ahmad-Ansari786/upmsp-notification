@@ -70,10 +70,11 @@ def generate_ai_data(bytes_payload, mime_type, title):
         
         prompt = (
             f"Notice Title: '{title}'\n"
-            "Task: Please read the attached document thoroughly.\n"
-            "1. Provide a clear, highly accurate, and easy-to-understand 5-6 line (bullet point) summary in Hindi (script also).\n"
-            "2. Extract 5-10 search keywords for this notice. Include Roman Hindi (Hinglish) and English terms.\n"
-            "IMPORTANT: Output exactly in the format below without any extra text.\n\n"
+            "Task: Please read the entire attached document thoroughly from start to finish. "
+            "Carefully analyze all the pages, extract key information such as important dates, deadlines, "
+            "rules, and the main purpose of the notice. "
+            "After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
+            "4-5 line (bullet point) summary in Hindi(script also).If more important then more lines also."\n\n"
             "SUMMARY:\n"
             "[Your bullet points here]\n"
             "KEYWORDS:\n"
