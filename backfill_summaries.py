@@ -1,9 +1,11 @@
 import os
 import time
 import requests
+import io
 import firebase_admin
 from firebase_admin import credentials, firestore
 import google.generativeai as genai
+from pypdf import PdfReader, PdfWriter
 
 # =====================================================================
 # ⚙️ CONFIGURATION
@@ -40,13 +42,35 @@ def get_smart_content_type(extension):
     }
     return types_map.get(extension.lower(), 'application/pdf')
 
+def truncate_pdf_if_needed(bytes_payload, max_pages=20):
+    """Agar PDF 20 page se badi hai, toh sirf pehle 20 page nikalta hai"""
+    try:
+        reader = PdfReader(io.BytesIO(bytes_payload))
+        total_pages = len(reader.pages)
+        
+        if total_pages <= max_pages:
+            return bytes_payload # PDF chhoti hai, kuch mat karo
+            
+        print(f"✂️ PDF is {total_pages} pages long. Truncating to first {max_pages} pages...")
+        writer = PdfWriter()
+        for i in range(max_pages):
+            writer.add_page(reader.pages[i])
+            
+        output_stream = io.BytesIO()
+        writer.write(output_stream)
+        return output_stream.getvalue()
+        
+    except Exception as e:
+        print(f"⚠️ PDF Truncation Error: {e}. Bhejne ki koshish kar rahe hain original file.")
+        return bytes_payload
+
 def generate_ai_data(bytes_payload, mime_type, title):
     try:
         model = genai.GenerativeModel('gemini-3.1-flash-lite')
         
         prompt = (
             f"Notice Title: '{title}'\n"
-            "Task: Please read the entire attached document thoroughly.\n"
+            "Task: Please read the attached document thoroughly.\n"
             "1. Provide a clear, highly accurate, and easy-to-understand 5-6 line (bullet point) summary in Hindi (script also).\n"
             "2. Extract 5-10 search keywords for this notice. Include Roman Hindi (Hinglish) and English terms.\n"
             "IMPORTANT: Output exactly in the format below without any extra text.\n\n"
@@ -88,7 +112,6 @@ def generate_ai_data(bytes_payload, mime_type, title):
 def run_backfill():
     print("\n🔍 Fetching up to 200 documents from Firestore...")
     
-    # 🌟 BADLAAV: Yahan .limit(200) lagaya gaya hai
     docs = collection_ref.limit(200).stream()
     
     updated_count = 0
@@ -123,6 +146,7 @@ def run_backfill():
             
         print(f"📥 Downloading file from: {file_url}")
         try:
+            # 🌟 BADLAAV: Timeout 120 kar diya gaya hai large files ke liye
             response = requests.get(file_url, timeout=120)
             if response.status_code != 200:
                 print(f"⚠️ Download failed with status {response.status_code}")
@@ -131,6 +155,10 @@ def run_backfill():
             bytes_payload = response.content
             ext = file_url.split('.')[-1].lower() if '.' in file_url else 'pdf'
             mime_type = get_smart_content_type(ext)
+            
+            # 🌟 BADLAAV: Agar PDF hai, toh 20 page ki limit apply karein
+            if mime_type == 'application/pdf':
+                bytes_payload = truncate_pdf_if_needed(bytes_payload, 20)
             
             print("🧠 Generating AI Summary & Keywords (Hinglish + English)...")
             ai_summary, ai_keywords = generate_ai_data(bytes_payload, mime_type, title)
