@@ -40,17 +40,20 @@ def get_smart_content_type(extension):
     }
     return types_map.get(extension.lower(), 'application/pdf')
 
-def generate_ai_summary(bytes_payload, mime_type, title):
+def generate_ai_data(bytes_payload, mime_type, title):
     try:
-        # 🌟 BADLAAV: 15 RPM wali speed ke liye 'gemini-1.5-flash' ka use
         model = genai.GenerativeModel('gemini-3.1-flash-lite')
+        
         prompt = (
             f"Notice Title: '{title}'\n"
-            "Task: Please read the entire attached document thoroughly from start to finish. "
-            "Carefully analyze all the pages, extract key information such as important dates, deadlines, "
-            "rules, and the main purpose of the notice. "
-            "After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
-            "5-6 line (bullet point) summary in Hindi(script also).If more important then more lines also."
+            "Task: Please read the entire attached document thoroughly.\n"
+            "1. Provide a clear, highly accurate, and easy-to-understand 5-6 line (bullet point) summary in Hindi (script also).\n"
+            "2. Extract 5-10 search keywords for this notice. Include Roman Hindi (Hinglish) and English terms.\n"
+            "IMPORTANT: Output exactly in the format below without any extra text.\n\n"
+            "SUMMARY:\n"
+            "[Your bullet points here]\n"
+            "KEYWORDS:\n"
+            "[comma-separated words here]"
         )
         
         if mime_type in ['application/pdf', 'image/jpeg', 'image/png']:
@@ -58,20 +61,35 @@ def generate_ai_summary(bytes_payload, mime_type, title):
                 prompt,
                 {"mime_type": mime_type, "data": bytes_payload}
             ])
-            return response.text.strip()
+            
+            raw_text = response.text.strip()
+            
+            summary_text = raw_text
+            keywords_list = []
+            
+            if "KEYWORDS:" in raw_text:
+                parts = raw_text.split("KEYWORDS:")
+                summary_text = parts[0].replace("SUMMARY:", "").strip()
+                
+                raw_keywords = parts[1].strip()
+                keywords_list = [k.strip().lower().strip('.') for k in raw_keywords.split(",") if k.strip()]
+                
+            return summary_text, keywords_list
         else:
-            return "Document format not supported for AI summary."
+            return "Document format not supported for AI summary.", []
+            
     except Exception as e:
         print(f"⚠️ AI Error: {e}")
-        return None
+        return None, []
 
 # =====================================================================
 # 🚀 MAIN BACKFILL PROCESS
 # =====================================================================
 def run_backfill():
-    print("\n🔍 Fetching 'UPMSP Board Office' documents from Firestore...")
+    print("\n🔍 Fetching up to 200 documents from Firestore...")
     
-    docs = collection_ref.where("department", "==", "UPMSP Board Office").stream()
+    # 🌟 BADLAAV: Yahan .limit(200) lagaya gaya hai
+    docs = collection_ref.limit(200).stream()
     
     updated_count = 0
     skipped_count = 0
@@ -83,7 +101,7 @@ def run_backfill():
         is_webpage = doc_data.get("isWebpage", False)
         file_url = doc_data.get("serverFileUrl", "")
         
-        if "summary" in doc_data:
+        if "summary" in doc_data and "search_keywords" in doc_data:
             skipped_count += 1
             continue
             
@@ -91,9 +109,10 @@ def run_backfill():
         print(f"📄 Processing: {title[:50]}...")
         
         if is_webpage:
-            print("🌐 Webpage detected, setting default summary...")
+            print("🌐 Webpage detected, setting default summary and empty keywords...")
             collection_ref.document(doc_id).update({
-                "summary": "Portal link notice - please visit the portal for full details."
+                "summary": "Portal link notice - please visit the portal for full details.",
+                "search_keywords": ["portal", "link", "notice"]
             })
             updated_count += 1
             continue
@@ -113,27 +132,27 @@ def run_backfill():
             ext = file_url.split('.')[-1].lower() if '.' in file_url else 'pdf'
             mime_type = get_smart_content_type(ext)
             
-            print("🧠 Generating AI Summary...")
-            ai_summary = generate_ai_summary(bytes_payload, mime_type, title)
+            print("🧠 Generating AI Summary & Keywords (Hinglish + English)...")
+            ai_summary, ai_keywords = generate_ai_data(bytes_payload, mime_type, title)
             
             if ai_summary:
-                print("✅ Summary Generated! Updating Firestore...")
+                print(f"✅ Generated! Found {len(ai_keywords)} keywords. Updating Firestore...")
                 collection_ref.document(doc_id).update({
-                    "summary": ai_summary
+                    "summary": ai_summary,
+                    "search_keywords": ai_keywords
                 })
                 updated_count += 1
                 
-                # 🌟 BADLAAV: Delay ko ghatakar sirf 5 seconds kar diya gaya hai (15 RPM ke hisaab se safe limit)
                 print("⏳ Sleeping for 5 seconds...")
                 time.sleep(5)
             else:
-                print("❌ Failed to generate summary for this document.")
+                print("❌ Failed to generate data for this document.")
                 
         except Exception as e:
             print(f"❌ Error processing document {doc_id}: {e}")
 
     print("\n" + "=" * 50)
-    print(f"🏁 BACKFILL COMPLETE | Updated: {updated_count} | Skipped (Already Had Summary): {skipped_count}")
+    print(f"🏁 BATCH COMPLETE | Updated: {updated_count} | Skipped: {skipped_count}")
     print("=" * 50)
 
 if __name__ == "__main__":
