@@ -49,7 +49,7 @@ def truncate_pdf_if_needed(bytes_payload, max_pages=20):
         total_pages = len(reader.pages)
         
         if total_pages <= max_pages:
-            return bytes_payload # PDF chhoti hai, kuch mat karo
+            return bytes_payload
             
         print(f"✂️ PDF is {total_pages} pages long. Truncating to first {max_pages} pages...")
         writer = PdfWriter()
@@ -68,13 +68,16 @@ def generate_ai_data(bytes_payload, mime_type, title):
     try:
         model = genai.GenerativeModel('gemini-3.1-flash-lite')
         
+        # 🌟 Aapka diya gaya final prompt yahan laga diya gaya hai
         prompt = (
             f"Notice Title: '{title}'\n"
             "Task: Please read the entire attached document thoroughly from start to finish. "
             "Carefully analyze all the pages, extract key information such as important dates, deadlines, "
-            "rules, and the main purpose of the notice. "
-            "After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
-            "4-5 line (bullet point) summary in Hindi(script also).If more important then more lines also."\n\n"
+            "rules, and the main purpose of the notice.\n"
+            "1. After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
+            "4-5 line (bullet point) summary in Hindi (script also). If more important then more lines also.\n"
+            "2. Extract 5-10 search keywords for this notice. Include Roman Hindi (Hinglish) and English terms.\n"
+            "IMPORTANT: Output exactly in the format below without any extra text.\n\n"
             "SUMMARY:\n"
             "[Your bullet points here]\n"
             "KEYWORDS:\n"
@@ -111,14 +114,19 @@ def generate_ai_data(bytes_payload, mime_type, title):
 # 🚀 MAIN BACKFILL PROCESS
 # =====================================================================
 def run_backfill():
-    print("\n🔍 Fetching up to 200 documents from Firestore...")
+    print("\n🔍 Scanning documents from Firestore...")
     
-    docs = collection_ref.limit(200).stream()
+    docs = collection_ref.stream()
     
     updated_count = 0
     skipped_count = 0
     
     for doc in docs:
+        # 🌟 200 ki limit ka Switch
+        if updated_count >= 200:
+            print("\n🛑 200 naye notices update ho chuke hain! Batch limit reached.")
+            break
+            
         doc_data = doc.to_dict()
         doc_id = doc.id
         title = doc_data.get("title", "Unknown Title")
@@ -147,7 +155,7 @@ def run_backfill():
             
         print(f"📥 Downloading file from: {file_url}")
         try:
-            # 🌟 BADLAAV: Timeout 120 kar diya gaya hai large files ke liye
+            # 🌟 Large files ke liye 120 sec timeout
             response = requests.get(file_url, timeout=120)
             if response.status_code != 200:
                 print(f"⚠️ Download failed with status {response.status_code}")
@@ -157,7 +165,7 @@ def run_backfill():
             ext = file_url.split('.')[-1].lower() if '.' in file_url else 'pdf'
             mime_type = get_smart_content_type(ext)
             
-            # 🌟 BADLAAV: Agar PDF hai, toh 20 page ki limit apply karein
+            # 🌟 20 Pages par PDF truncation
             if mime_type == 'application/pdf':
                 bytes_payload = truncate_pdf_if_needed(bytes_payload, 20)
             
