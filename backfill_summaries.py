@@ -123,7 +123,7 @@ def run_backfill():
             
         print(f"📥 Downloading file from: {file_url}")
         try:
-            response = requests.get(file_url, timeout=20)
+            response = requests.get(file_url, timeout=120)
             if response.status_code != 200:
                 print(f"⚠️ Download failed with status {response.status_code}")
                 continue
