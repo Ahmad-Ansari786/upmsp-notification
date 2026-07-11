@@ -6,4 +6,5 @@ requests
 pypdf
 boto3
 beautifulsoup4
+BeautifulSoup
 bs4
