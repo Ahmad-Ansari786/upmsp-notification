@@ -21,7 +21,7 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        pip install --no-cache-dir -r requirements.txt
 
     - name: Inject Firebase Secret Key JSON
       run: |
@@ -36,5 +36,5 @@ jobs:
         CF_ENDPOINT: ${{ secrets.CF_ENDPOINT }}
         CF_PUBLIC_URL: ${{ secrets.CF_PUBLIC_URL }}
         CF_BUCKET_NAME: ${{ secrets.CF_BUCKET_NAME }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # 🌟 ADDED: Gemini API Key secret se pass ho rahi hai
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: python updater.py
