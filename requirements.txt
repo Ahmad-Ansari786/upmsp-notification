@@ -4,3 +4,6 @@ google-api-core>=2.19.0
 grpcio>=1.64.1
 requests
 pypdf
+boto3
+beautifulsoup4
+Bs4
