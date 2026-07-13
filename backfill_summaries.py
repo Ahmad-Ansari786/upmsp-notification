@@ -68,18 +68,20 @@ def generate_ai_data(bytes_payload, mime_type, title):
     try:
         model = genai.GenerativeModel('gemini-3.1-flash-lite')
         
-        # 🌟 Aapka diya gaya final prompt yahan laga diya gaya hai
+        # 🌟 NAYA PROMPT: Ab Hindi, English aur Keywords teeno mangenge
         prompt = (
             f"Notice Title: '{title}'\n"
             "Task: Please read the entire attached document thoroughly from start to finish. "
             "Carefully analyze all the pages, extract key information such as important dates, deadlines, "
             "rules, and the main purpose of the notice.\n"
-            "1. After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
-            "4-5 line (bullet point) summary in Hindi (script also). If more important then more lines also.\n"
-            "2. Extract 5-10 search keywords for this notice. Include Roman Hindi (Hinglish) and English terms.\n"
+            "1. Provide a clear, highly accurate, and easy-to-understand 4-5 line (bullet point) summary in Hindi (Devanagari script).\n"
+            "2. Provide the same 4-5 line (bullet point) summary translated into English.\n"
+            "3. Extract 5-10 search keywords for this notice. Include Roman Hindi (Hinglish) and English terms.\n"
             "IMPORTANT: Output exactly in the format below without any extra text.\n\n"
-            "SUMMARY:\n"
-            "[Your bullet points here]\n"
+            "HINDI_SUMMARY:\n"
+            "[Your Hindi bullet points here]\n"
+            "ENGLISH_SUMMARY:\n"
+            "[Your English bullet points here]\n"
             "KEYWORDS:\n"
             "[comma-separated words here]"
         )
@@ -92,23 +94,28 @@ def generate_ai_data(bytes_payload, mime_type, title):
             
             raw_text = response.text.strip()
             
-            summary_text = raw_text
+            summary_hindi = ""
+            summary_english = ""
             keywords_list = []
             
-            if "KEYWORDS:" in raw_text:
-                parts = raw_text.split("KEYWORDS:")
-                summary_text = parts[0].replace("SUMMARY:", "").strip()
+            # 🌟 NAYA PARSER: AI ke text me se teeno cheezein nikalna
+            if "ENGLISH_SUMMARY:" in raw_text and "KEYWORDS:" in raw_text:
+                parts_hindi = raw_text.split("ENGLISH_SUMMARY:")
+                summary_hindi = parts_hindi[0].replace("HINDI_SUMMARY:", "").strip()
                 
-                raw_keywords = parts[1].strip()
+                parts_eng_key = parts_hindi[1].split("KEYWORDS:")
+                summary_english = parts_eng_key[0].strip()
+                
+                raw_keywords = parts_eng_key[1].strip()
                 keywords_list = [k.strip().lower().strip('.') for k in raw_keywords.split(",") if k.strip()]
                 
-            return summary_text, keywords_list
+            return summary_hindi, summary_english, keywords_list
         else:
-            return "Document format not supported for AI summary.", []
+            return None, None, []
             
     except Exception as e:
         print(f"⚠️ AI Error: {e}")
-        return None, []
+        return None, None, []
 
 # =====================================================================
 # 🚀 MAIN BACKFILL PROCESS
@@ -122,7 +129,6 @@ def run_backfill():
     skipped_count = 0
     
     for doc in docs:
-        # 🌟 200 ki limit ka Switch
         if updated_count >= 200:
             print("\n🛑 200 naye notices update ho chuke hain! Batch limit reached.")
             break
@@ -133,7 +139,8 @@ def run_backfill():
         is_webpage = doc_data.get("isWebpage", False)
         file_url = doc_data.get("serverFileUrl", "")
         
-        if "summary" in doc_data and "search_keywords" in doc_data:
+        # 🌟 NAYA SKIP LOGIC: Ab ye check karega ki englishSummary pehle se hai ya nahi
+        if "summary" in doc_data and "search_keywords" in doc_data and "englishSummary" in doc_data:
             skipped_count += 1
             continue
             
@@ -141,9 +148,10 @@ def run_backfill():
         print(f"📄 Processing: {title[:50]}...")
         
         if is_webpage:
-            print("🌐 Webpage detected, setting default summary and empty keywords...")
+            print("🌐 Webpage detected, setting default summaries...")
             collection_ref.document(doc_id).update({
-                "summary": "Portal link notice - please visit the portal for full details.",
+                "summary": "पोर्टल लिंक नोटिस - कृपया पूरी जानकारी के लिए पोर्टल पर जाएँ।",
+                "englishSummary": "Portal link notice - please visit the portal for full details.",
                 "search_keywords": ["portal", "link", "notice"]
             })
             updated_count += 1
@@ -155,7 +163,6 @@ def run_backfill():
             
         print(f"📥 Downloading file from: {file_url}")
         try:
-            # 🌟 Large files ke liye 120 sec timeout
             response = requests.get(file_url, timeout=120)
             if response.status_code != 200:
                 print(f"⚠️ Download failed with status {response.status_code}")
@@ -165,17 +172,18 @@ def run_backfill():
             ext = file_url.split('.')[-1].lower() if '.' in file_url else 'pdf'
             mime_type = get_smart_content_type(ext)
             
-            # 🌟 20 Pages par PDF truncation
             if mime_type == 'application/pdf':
                 bytes_payload = truncate_pdf_if_needed(bytes_payload, 20)
             
-            print("🧠 Generating AI Summary & Keywords (Hinglish + English)...")
-            ai_summary, ai_keywords = generate_ai_data(bytes_payload, mime_type, title)
+            print("🧠 Generating AI Hindi & English Summary + Keywords...")
+            ai_summary_hindi, ai_summary_english, ai_keywords = generate_ai_data(bytes_payload, mime_type, title)
             
-            if ai_summary:
+            if ai_summary_hindi and ai_summary_english:
                 print(f"✅ Generated! Found {len(ai_keywords)} keywords. Updating Firestore...")
+                # 🌟 NAYA FIRESTORE UPDATE: Ab teeno cheezein save hongi
                 collection_ref.document(doc_id).update({
-                    "summary": ai_summary,
+                    "summary": ai_summary_hindi,
+                    "englishSummary": ai_summary_english,
                     "search_keywords": ai_keywords
                 })
                 updated_count += 1
@@ -183,7 +191,7 @@ def run_backfill():
                 print("⏳ Sleeping for 5 seconds...")
                 time.sleep(5)
             else:
-                print("❌ Failed to generate data for this document.")
+                print("❌ Failed to generate proper formatted data for this document.")
                 
         except Exception as e:
             print(f"❌ Error processing document {doc_id}: {e}")
