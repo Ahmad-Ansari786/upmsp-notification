@@ -1,0 +1,39 @@
+name: AI Database Healer
+
+on:
+  workflow_dispatch: # Manual button se chalane ke liye
+
+jobs:
+  run-ai-healer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install firebase-admin google-generativeai requests
+
+      - name: Setup Firebase Key
+        run: |
+          cat << 'EOF' > serviceAccountKey.json
+          ${{ secrets.FIREBASE_JSON_DATA }}
+          EOF
+
+      - name: Run AI Extractor
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python 1_extract_and_fix.py
+
+      - name: Commit and Push JSON File
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add fixed_notices_backup.json
+          git commit -m "Auto-generated AI fixed data"
+          git push
