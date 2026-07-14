@@ -38,13 +38,13 @@ def generate_ai_metadata(bytes_payload, mime_type, title):
         model = genai.GenerativeModel('gemini-3.1-flash-lite')
         prompt = (
             f"Notice Title: '{title}'\n"
-            "Task: Read the attached document. "
-            "Return ONLY a valid JSON object with EXACTLY these four keys:\n"
+            "Task: Read the attached document carefully and extract key information. "
+            "You MUST return the output ONLY as a valid JSON object with EXACTLY these four keys:\n"
             "1. 'summary': A 4-5 line bulleted summary in Hindi.\n"
             "2. 'englishSummary': A 4-5 line bulleted summary in English.\n"
-            "3. 'search_keywords': An array of 10-15 keywords (include hindi/english terms, numbers, dates).\n"
-            "4. 'fullText': Extract ALL readable text exactly as written (OCR).\n"
-            "Do NOT include markdown like ```json."
+            "3. 'search_keywords': An array of 10-15 highly relevant keywords (include hindi/english terms, numbers, dates).\n"
+            "4. 'fullText': Extract and transcribe ALL the readable text EXACTLY as written in the document (including all numbers, dates, tables, and names). This is crucial for our search engine.\n"
+            "Ensure the text does not break JSON formatting (escape quotes and newlines properly). Do NOT include any markdown formatting like ```json in your response."
         )
         
         response = model.generate_content([prompt, {"mime_type": mime_type, "data": bytes_payload}])
