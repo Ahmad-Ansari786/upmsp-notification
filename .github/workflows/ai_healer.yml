@@ -17,7 +17,9 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install firebase-admin pypdf google-generativeai requests
+          pip install --upgrade pip
+          # Yeh command saari zaroori libraries ko latest version par force karegi
+          pip install firebase-admin google-generativeai requests pypdf google-cloud-firestore google-api-core --upgrade
 
       - name: Setup Firebase Key
         run: |
