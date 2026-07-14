@@ -114,7 +114,7 @@ def run_offline_extractor():
                     full_doc_data["search_keywords"] = ai_data.get("search_keywords", [])
                     print(f"   ✅ AI data added.")
                 
-                time.sleep(3) 
+                time.sleep(5) 
             except Exception as e:
                 print(f"   ❌ Error processing {doc_id}: {e}")
 
