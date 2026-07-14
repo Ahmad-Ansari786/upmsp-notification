@@ -3,6 +3,9 @@ name: AI Database Healer
 on:
   workflow_dispatch: # Manual button se chalane ke liye
 
+permissions:
+  contents: write # Git push aur file commit karne ke liye zaroori hai
+
 jobs:
   run-ai-healer:
     runs-on: ubuntu-latest
@@ -18,7 +21,6 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
-          # Yeh command saari zaroori libraries ko latest version par force karegi
           pip install firebase-admin google-generativeai requests pypdf google-cloud-firestore google-api-core --upgrade
 
       - name: Setup Firebase Key
@@ -32,10 +34,21 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python 1_extract_and_fix.py
 
+      - name: Upload Backup Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixed-notices-data
+          path: fixed_notices_backup.json
+
       - name: Commit and Push JSON File
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add fixed_notices_backup.json
-          git commit -m "Auto-generated AI fixed data"
-          git push
+          # Check agar file change hui hai toh hi commit kare
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-generated AI fixed data"
+            git push
+          fi
