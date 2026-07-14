@@ -17,7 +17,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install firebase-admin google-generativeai requests
+          pip install firebase-admin pypdf google-generativeai requests
 
       - name: Setup Firebase Key
         run: |
