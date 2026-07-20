@@ -10,6 +10,10 @@ import firebase_admin
 from firebase_admin import credentials, firestore, messaging
 from datetime import datetime
 import google.generativeai as genai
+import json
+from json_repair import repair_json
+import time
+import pytz # इसे इंस्टॉल करना न भूलें: pip install pytz
 
 # =====================================================================
 # ⚙️ FULL CONFIGURATION BLOCK (GitHub Secrets Encryption Layer)
@@ -53,31 +57,55 @@ r2_client = boto3.client(
 # =====================================================================
 # 🤖 GOOGLE AI (GEMINI) SUMMARY GENERATOR
 # =====================================================================
-def generate_ai_summary(bytes_payload, mime_type, title):
+def generate_ai_data(bytes_payload, mime_type, title):
     if not GEMINI_API_KEY:
-        return "AI Summary unavailable (No API Key)"
+        return None
+    
+    # फाइल साइज़ चेक (>18MB) ताकि Gemini API क्रैश न हो (आपके दूसरे स्क्रिप्ट का लॉजिक)
+    if len(bytes_payload) > 18 * 1024 * 1024:
+        print(f"⚠️ File is too large for inline AI processing (>18MB). Skipping AI extraction.")
+        return None
+
+    OPTIMIZED_PROMPT = (
+        "You are an elite, enterprise-grade Document Intelligence and OCR Specialist AI.\n"
+        "Your core directive is to perform a deep, comprehensive multimodal analysis of the attached document (PDF or Image) and extract its structure and contents into a flawless JSON object.\n\n"
+        "### REQUIRED JSON SCHEMA:\n"
+        "You must return a JSON object containing exactly these four keys:\n"
+        "{\n"
+        "  \"summary\": \"A high-quality, dense 5-6 line(bullet poins) summary written in formal, professional HINDI (शुद्ध और प्रशासनिक हिंदी). It must capture the issuing authority, the exact core objective, critical dates/deadlines, and specific action items. Avoid vague sentences.\",\n"
+        "  \"englishSummary\": \"A detailed, high-quality 5-6 line summary in formal ENGLISH that perfectly mirrors the depth, context, and structural facts of the Hindi summary.\",\n"
+        "  \"search_keywords\": [\"An array of exactly 12-18 highly relevant keywords, proper nouns, abbreviations, department names, and semantic search terms extracted directly from the text. Include both Hindi and English variations to optimize for downstream Typesense search index matching.\"],\n"
+        "  \"fullText\": \"The absolute complete, verbatim text extraction (OCR) of the entire document from the first word to the last. Do not truncate, do not summarize, and do not skip any section, header, table, or footer. Capture everything precisely with exact text characters.\"\n"
+        "}\n\n"
+        "### CRITICAL EXTRACTION RULES:\n"
+        "1. Strict Output Format: Return ONLY the raw JSON object string. Do not use markdown wrappers, do not include ```json, and do not add conversational pleasantries.\n"
+        "2. Character Escaping: Carefully escape all control characters, internal double quotes (\\\"), and ensure line breaks are correctly preserved as standard '\\n' inside the text values to ensure json.loads never fails.\n"
+        "3. Multi-lingual Robustness: Maintain flawless native character encoding for all scripts present (English, Hindi, Urdu, Sindhi, etc.). Do not convert regional text into unicode symbols or escape strings like \\uXXXX. Keep them native.\n"
+        "4. Deep Scan Capability: Actively extract text from low-contrast, stamped, or handwritten elements typically found in scanned government orders or official notices."
+    )
         
     try:
         model = genai.GenerativeModel('gemini-3.1-flash-lite')
-        prompt = (
-            f"Notice Title: '{title}'\n"
-            "Task: Please read the entire attached document thoroughly from start to finish. "
-            "Carefully analyze all the pages, extract key information such as important dates, deadlines, "
-            "rules, and the main purpose of the notice. "
-            "After reading the complete document, provide a clear, highly accurate, and easy-to-understand "
-            "4-5 line (bullet point) summary in Hindi(script also).If more important then more lines also."
+        prompt_input = [
+            f"Notice Title Context: {title}", 
+            {"mime_type": mime_type, "data": bytes_payload}
+        ]
+
+        # जेमिनी को JSON मोड में कॉल करना
+        ai_response = model.generate_content(
+            [OPTIMIZED_PROMPT] + prompt_input,
+            generation_config={"response_mime_type": "application/json"}
         )
-        if mime_type in ['application/pdf', 'image/jpeg', 'image/png']:
-            response = model.generate_content([
-                prompt,
-                {"mime_type": mime_type, "data": bytes_payload}
-            ])
-            return response.text.strip()
-        else:
-            return "Document format not supported for direct AI summary."
+        
+        # रिपॉन्स को साफ़ करके पार्स करना
+        raw_text = ai_response.text.strip()
+        repaired_json_str = repair_json(raw_text)
+        ai_data = json.loads(repaired_json_str)
+        return ai_data
+
     except Exception as e:
-        print(f"⚠️ Google AI Summary Error: {e}")
-        return "Summary generation failed."
+        print(f"⚠️ Google AI Extraction Error: {e}")
+        return None
 
 # =====================================================================
 # 🛠️ HELPER PARSING FUNCTIONS (Data Security & Formatting)
@@ -160,6 +188,11 @@ def run_upmsp_pipeline():
     skip_count = 0
 
     for row in all_notice_rows:
+        # --- यहाँ IST Timezone हमेशा के लिए सेट करें ---
+        ist_timezone = pytz.timezone('Asia/Kolkata')
+        current_ist_time = datetime.now(ist_timezone)
+        live_entry_date = current_ist_time.strftime("%d-%m-%Y")
+        # -----------------------------------------------
         cells = row.find_all('td')
         if len(cells) < 4:
             continue  
@@ -169,7 +202,7 @@ def run_upmsp_pipeline():
         
         original_website_date = cells[2].get_text().strip()
         if not original_website_date:
-            original_website_date = datetime.now().strftime("%d-%m-%Y")
+            original_website_date = live_entry_date
 
         # 🌟 SMART LINK EXTRACTOR
         links_to_process = []
@@ -263,12 +296,19 @@ def run_upmsp_pipeline():
             print(f"🔗 Target Link Type: {'WEBPORTAL' if is_webpage_link else f'FILE ({link_extension.upper()})'}")
             
             cloudflare_permanent_url = target_url
-            ai_summary_text = "Portal link notice - please visit the portal for full details."
+            
+            # डिफ़ॉल्ट खाली डेटा, ताकि अगर वेबपेज हो या AI फेल हो जाए तो एरर न आए
+            ai_extracted = {
+                "summary": "Portal link notice - please visit the portal for full details.",
+                "englishSummary": "",
+                "search_keywords": [],
+                "fullText": ""
+            }
 
             if not is_webpage_link:
                 print(f"📥 Streaming file bytes from UPMSP for [{file_name}]...")
                 try:
-                    file_response = requests.get(target_url, headers=headers, timeout=15)
+                    file_response = requests.get(target_url, headers=headers, timeout=60)
                     if file_response.status_code != 200:
                         print(f"⚠️ File Stream failed ({file_response.status_code}). Skipping...")
                         continue
@@ -276,8 +316,11 @@ def run_upmsp_pipeline():
                     bytes_payload = file_response.content
                     content_type_header = get_smart_content_type(link_extension)
 
-                    print("🧠 Generating Google AI Summary...")
-                    ai_summary_text = generate_ai_summary(bytes_payload, content_type_header, final_title)
+                    print("🧠 Running Full AI Document Extraction (OCR + Summaries)...")
+                    # नया फंक्शन कॉल किया
+                    ai_result = generate_ai_data(bytes_payload, content_type_header, final_title)
+                    if ai_result:
+                        ai_extracted.update(ai_result) # अगर सफलता मिली तो डिफ़ॉल्ट डेटा को ओवरराइट कर दें
 
                     print(f"☁️ Pushing binary data to Cloudflare R2 [Mime: {content_type_header}]...")
                     r2_client.put_object(
@@ -288,6 +331,8 @@ def run_upmsp_pipeline():
                     )
                     cloudflare_permanent_url = f"{CLOUDFLARE_PUBLIC_BASE_URL.rstrip('/')}/notices/{file_name}"
                     print(f"✅ R2 Permanent Backup URL: {cloudflare_permanent_url}")
+
+                    time.sleep(5)
 
                 except NoCredentialsError:
                     print("❌ Invalid Cloudflare API Credentials! Stopping pipeline execution.")
@@ -301,18 +346,27 @@ def run_upmsp_pipeline():
             print("⚡ Synchronizing Firestore Realtime Nodes...")
             try:
                 is_pdf_file = (link_extension == 'pdf')
+                
                 doc_ref.set({
                     "id": doc_id,
                     "title": final_title,
+                    "fileName": file_name if not is_webpage_link else "",
                     "date": live_entry_date,  
                     "originalWebsiteDate": original_website_date,  
-                    "fileName": file_name,
+                    "ts_epoch": int(current_ist_time.timestamp()), # Typesense की फास्ट सॉर्टिंग के लिए
+                    "timestamp": firestore.SERVER_TIMESTAMP,     # Firestore के ओरिजिनल रिकॉर्ड के लिए
+                    "targetClass": "General", 
                     "department": "UPMSP Board Office",
-                    "serverFileUrl": cloudflare_permanent_url,
-                    "summary": ai_summary_text, 
-                    "isWebpage": is_webpage_link,
+                    "isTrade": False,
                     "isPdf": is_pdf_file,
-                    "timestamp": firestore.SERVER_TIMESTAMP
+                    "isWebpage": is_webpage_link,
+                    "serverFileUrl": cloudflare_permanent_url,
+                    "viewCount": 0,
+                    "fullText": ai_extracted.get("fullText", ""),
+                    "summary": ai_extracted.get("summary", ""),
+                    "englishSummary": ai_extracted.get("englishSummary", ""),
+                    "search_keywords": ai_extracted.get("search_keywords", []),
+                    "status": "published"
                 })
                 print(f"✅ SUCCESS: Complete Sync Saved for [{doc_id}]")
                 send_fcm_push_notification(final_title, is_webpage_link)
