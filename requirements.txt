@@ -6,3 +6,4 @@ requests
 pypdf
 boto3
 beautifulsoup4
+json-repair
